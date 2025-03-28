@@ -1,87 +1,74 @@
-import { pgTable, serial, varchar, text, timestamp, boolean, decimal } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, uuid, boolean } from "drizzle-orm/pg-core"
 
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  email: varchar("email", { length: 255 }).notNull().unique(),
-  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
-  firstName: varchar("first_name", { length: 100 }).notNull(),
-  lastName: varchar("last_name", { length: 100 }).notNull(),
-  documentType: varchar("document_type", { length: 20 }).notNull(),
-  documentNumber: varchar("document_number", { length: 50 }).notNull(),
-  phone: varchar("phone", { length: 50 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull().unique(),
+  password: text("password").notNull(),
+  name: text("name").notNull(),
+  role: text("role").notNull(),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+})
+
+export const loginAttempts = pgTable("login_attempts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ip: text("ip").notNull(),
+  email: text("email"),
+  success: boolean("success").notNull(),
+  userId: uuid("user_id").references(() => users.id),
+  userAgent: text("user_agent"),
+  timestamp: timestamp("timestamp").defaultNow().notNull()
 })
 
 export const news = pgTable("news", {
-  id: serial("id").primaryKey(),
-  title: varchar("title", { length: 255 }).notNull(),
-  content: text("content").notNull(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
   excerpt: text("excerpt"),
-  imageUrl: varchar("image_url", { length: 255 }),
-  publishedAt: timestamp("published_at").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  content: text("content").notNull(),
+  imageUrl: text("image_url"),
+  publishedAt: timestamp("published_at").defaultNow().notNull(),
+  author: text("author").notNull(),
+  category: text("category").notNull()
 })
 
 export const events = pgTable("events", {
-  id: serial("id").primaryKey(),
-  title: varchar("title", { length: 255 }).notNull(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
   description: text("description").notNull(),
-  location: varchar("location", { length: 255 }).notNull(),
+  location: text("location").notNull(),
   startDate: timestamp("start_date").notNull(),
-  endDate: timestamp("end_date"),
-  imageUrl: varchar("image_url", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-})
-
-export const complaints = pgTable("complaints", {
-  id: serial("id").primaryKey(),
-  userId: serial("user_id").references(() => users.id),
-  category: varchar("category", { length: 100 }).notNull(),
-  subject: varchar("subject", { length: 255 }).notNull(),
-  description: text("description").notNull(),
-  status: varchar("status", { length: 50 }).default("pending"),
-  location: varchar("location", { length: 255 }),
-  latitude: decimal("latitude", { precision: 10, scale: 8 }),
-  longitude: decimal("longitude", { precision: 11, scale: 8 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  endDate: timestamp("end_date").notNull(),
+  imageUrl: text("image_url")
 })
 
 export const documents = pgTable("documents", {
-  id: serial("id").primaryKey(),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
-  documentType: varchar("document_type", { length: 100 }).notNull(),
-  fileUrl: varchar("file_url", { length: 255 }),
-  publicationDate: timestamp("publication_date").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-})
-
-export const appointments = pgTable("appointments", {
-  id: serial("id").primaryKey(),
-  userId: serial("user_id").references(() => users.id),
-  department: varchar("department", { length: 100 }).notNull(),
-  service: varchar("service", { length: 100 }).notNull(),
-  appointmentDate: timestamp("appointment_date").notNull(),
-  status: varchar("status", { length: 50 }).default("scheduled"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  type: text("type").notNull(),
+  url: text("url").notNull(),
+  publishedAt: timestamp("published_at").defaultNow().notNull()
 })
 
 export const contactMessages = pgTable("contact_messages", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull(),
-  phone: varchar("phone", { length: 50 }),
-  subject: varchar("subject", { length: 255 }).notNull(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  subject: text("subject").notNull(),
   message: text("message").notNull(),
-  read: boolean("read").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+})
+
+export const complaints = pgTable("complaints", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id),
+  category: text("category").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+  location: text("location"),
+  latitude: text("latitude"),
+  longitude: text("longitude"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
 })
 

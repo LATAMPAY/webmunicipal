@@ -1,348 +1,228 @@
 import { db } from '@/lib/db'
+import { users, loginAttempts } from '@/lib/schema'
 import { compare, hash } from 'bcryptjs'
 import { sign, verify } from 'jsonwebtoken'
-import { generateTOTP, verifyTOTP } from '@/lib/utils/totp'
-import { sendEmail } from '@/lib/utils/email'
-import { rateLimit } from '@/lib/utils/rate-limit'
+import { cookies } from 'next/headers'
+import { NextRequest } from 'next/server'
+import { eq, sql } from 'drizzle-orm'
 
-export interface LoginAttempt {
-  ip: string
-  timestamp: Date
-  success: boolean
-  userId?: string
-  email?: string
-  userAgent?: string
-}
-
-interface RegisterParams {
-  email: string
-  password: string
-  nombre: string
-  apellido: string
-}
-
-interface LoginParams {
-  email: string
-  password: string
-}
-
-interface TwoFactorParams {
+interface TokenPayload {
   userId: string
-  code: string
+  role: string
+  iat: number
+  exp: number
 }
 
-interface ResetPasswordParams {
-  token: string
-  newPassword: string
-}
+export class AuthService {
+  private readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
+  private readonly JWT_EXPIRES_IN = '24h'
 
-export const authService = {
-  // Registro de usuario
-  async register(params: RegisterParams) {
-    const { email, password, nombre, apellido } = params
+  constructor() {}
 
-    // Verificar si el email ya existe
-    const existingUser = await db.user.findUnique({
-      where: { email }
-    })
-
-    if (existingUser) {
-      throw new Error('EMAIL_EXISTS')
-    }
-
-    // Hash de la contraseña
-    const hashedPassword = await hash(password, 12)
-
-    // Crear usuario
-    const user = await db.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        nombre,
-        apellido,
-        emailVerified: false,
-        role: 'USER'
-      }
-    })
-
-    // Generar token de verificación
-    const verificationToken = sign(
-      { userId: user.id, type: 'EMAIL_VERIFICATION' },
-      process.env.JWT_SECRET!,
-      { expiresIn: '24h' }
-    )
-
-    // Enviar email de verificación
-    await sendEmail({
-      to: user.email,
-      subject: 'Verifica tu cuenta',
-      template: 'email-verification',
-      data: {
-        nombre: user.nombre,
-        verificationLink: `${process.env.NEXT_PUBLIC_APP_URL}/verificar-email?token=${verificationToken}`
-      }
-    })
-
-    return { user, verificationToken }
-  },
-
-  // Login
-  async login(params: LoginParams) {
-    const { email, password } = params
-
-    // Verificar rate limiting
-    const isBlocked = await rateLimit.checkLimit(email, 'login', {
-      points: 5,
-      duration: 60 * 15 // 15 minutos
-    })
-
-    if (isBlocked) {
-      throw new Error('Demasiados intentos. Intente nuevamente en 15 minutos')
-    }
-
-    // Buscar usuario
-    const user = await db.user.findUnique({
-      where: { email }
-    })
-
-    if (!user) {
-      await this.recordLoginAttempt({ ip: email, success: false })
-      throw new Error('INVALID_CREDENTIALS')
-    }
-
-    // Verificar contraseña
-    const isValid = await compare(password, user.password)
-    if (!isValid) {
-      await this.recordLoginAttempt({ ip: email, success: false, userId: user.id })
-      throw new Error('INVALID_CREDENTIALS')
-    }
-
-    // Verificar estado de la cuenta
-    if (user.status === 'BLOQUEADO') {
-      throw new Error('Esta cuenta está bloqueada. Contacte al soporte')
-    }
-
-    if (user.status === 'PENDIENTE') {
-      throw new Error('Debe verificar su email antes de continuar')
-    }
-
-    // Registrar login exitoso
-    await this.recordLoginAttempt({ ip: email, success: true, userId: user.id })
-
-    // Verificar si el email está verificado
-    if (!user.emailVerified) {
-      throw new Error('EMAIL_NOT_VERIFIED')
-    }
-
-    // Generar código 2FA si está habilitado
-    if (user.twoFactorEnabled) {
-      const twoFactorCode = generateTOTP(user.twoFactorSecret!)
-      return {
-        user,
-        requiresTwoFactor: true,
-        twoFactorCode
-      }
-    }
-
-    // Generar token de acceso
-    const token = sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: '24h' }
-    )
-
-    return { user, token }
-  },
-
-  // Verificación de dos factores
-  async verifyTwoFactor(params: TwoFactorParams) {
-    const { userId, code } = params
-
-    const user = await db.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!user || !user.twoFactorSecret) {
-      throw new Error('INVALID_USER')
-    }
-
-    const isValid = verifyTOTP(code, user.twoFactorSecret)
-    if (!isValid) {
-      throw new Error('INVALID_CODE')
-    }
-
-    // Generar token de acceso
-    const token = sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: '24h' }
-    )
-
-    return { user, token }
-  },
-
-  // Verificación de email
-  async verifyEmail(token: string) {
+  async login(email: string, password: string, ip: string, userAgent: string) {
     try {
-      const decoded = verify(token, process.env.JWT_SECRET!) as {
-        userId: string
-        type: string
-      }
-
-      if (decoded.type !== 'EMAIL_VERIFICATION') {
-        throw new Error('INVALID_TOKEN')
-      }
-
-      const user = await db.user.update({
-        where: { id: decoded.userId },
-        data: { emailVerified: true }
-      })
-
-      return user
-    } catch {
-      throw new Error('INVALID_TOKEN')
-    }
-  },
-
-  // Recuperación de contraseña
-  async createPasswordReset(email: string) {
-    const user = await db.user.findUnique({
-      where: { email }
-    })
-
-    if (!user) {
-      throw new Error('USER_NOT_FOUND')
-    }
-
-    // Generar token de restablecimiento
-    const resetToken = sign(
-      { userId: user.id, type: 'PASSWORD_RESET' },
-      process.env.JWT_SECRET!,
-      { expiresIn: '1h' }
-    )
-
-    return { user, resetToken }
-  },
-
-  async resetPassword(params: ResetPasswordParams) {
-    const { token, newPassword } = params
-
-    try {
-      const decoded = verify(token, process.env.JWT_SECRET!) as {
-        userId: string
-        type: string
-      }
-
-      if (decoded.type !== 'PASSWORD_RESET') {
-        throw new Error('INVALID_TOKEN')
-      }
-
-      // Verificar requisitos de contraseña
-      if (newPassword.length < 8) {
-        throw new Error('PASSWORD_TOO_WEAK')
-      }
-
-      // Hash de la nueva contraseña
-      const hashedPassword = await hash(newPassword, 12)
-
-      // Actualizar contraseña
-      const user = await db.user.update({
-        where: { id: decoded.userId },
-        data: { password: hashedPassword }
-      })
-
-      return user
-    } catch {
-      throw new Error('INVALID_TOKEN')
-    }
-  },
-
-  // Validación de token
-  async validateToken(token: string) {
-    try {
-      const decoded = verify(token, process.env.JWT_SECRET!) as {
-        userId: string
-        role: string
-      }
-
-      const user = await db.user.findUnique({
-        where: { id: decoded.userId }
+      const user = await db.query.users.findFirst({
+        where: eq(users.email, email),
+        columns: {
+          id: true,
+          email: true,
+          password: true,
+          role: true,
+          status: true
+        }
       })
 
       if (!user) {
-        throw new Error('INVALID_TOKEN')
+        await this.recordLoginAttempt({
+          ip,
+          email,
+          success: false,
+          userAgent
+        })
+        throw new Error('Credenciales inválidas')
+      }
+
+      if (user.status !== 'active') {
+        await this.recordLoginAttempt({
+          ip,
+          email,
+          success: false,
+          userId: user.id,
+          userAgent
+        })
+        throw new Error('Cuenta inactiva')
+      }
+
+      const isValidPassword = await compare(password, user.password)
+      if (!isValidPassword) {
+        await this.recordLoginAttempt({
+          ip,
+          email,
+          success: false,
+          userId: user.id,
+          userAgent
+        })
+        throw new Error('Credenciales inválidas')
+      }
+
+      const token = this.generateToken(user.id, user.role)
+      await this.setAuthCookie(token)
+
+      await this.recordLoginAttempt({
+        ip,
+        email,
+        success: true,
+        userId: user.id,
+        userAgent
+      })
+
+      return {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role
+        }
+      }
+    } catch (error) {
+      console.error('Error en login:', error)
+      throw error
+    }
+  }
+
+  async logout() {
+    try {
+      const cookieStore = cookies()
+      cookieStore.delete('auth_token')
+      return { success: true }
+    } catch (error) {
+      console.error('Error en logout:', error)
+      throw error
+    }
+  }
+
+  async register(userData: {
+    email: string
+    password: string
+    name: string
+    role: string
+  }) {
+    try {
+      const existingUser = await db.query.users.findFirst({
+        where: eq(users.email, userData.email)
+      })
+
+      if (existingUser) {
+        throw new Error('El email ya está registrado')
+      }
+
+      const hashedPassword = await hash(userData.password, 10)
+      const user = await db.insert(users).values({
+        ...userData,
+        password: hashedPassword,
+        status: 'active'
+      }).returning()
+
+      return {
+        success: true,
+        user: {
+          id: user[0].id,
+          email: user[0].email,
+          name: user[0].name,
+          role: user[0].role
+        }
+      }
+    } catch (error) {
+      console.error('Error en registro:', error)
+      throw error
+    }
+  }
+
+  async verifyToken(token: string): Promise<TokenPayload> {
+    try {
+      return verify(token, this.JWT_SECRET) as TokenPayload
+    } catch (error) {
+      throw new Error('Token inválido')
+    }
+  }
+
+  async getCurrentUser() {
+    try {
+      const token = await this.getAuthToken()
+      if (!token) {
+        throw new Error('No autenticado')
+      }
+
+      const payload = await this.verifyToken(token)
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, payload.userId),
+        columns: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          status: true
+        }
+      })
+
+      if (!user) {
+        throw new Error('Usuario no encontrado')
       }
 
       return user
-    } catch {
-      throw new Error('INVALID_TOKEN')
+    } catch (error) {
+      console.error('Error al obtener usuario actual:', error)
+      throw error
     }
-  },
+  }
 
-  // Obtener tiempo de expiración del token
-  async getTokenExpiresIn(token: string) {
-    try {
-      const decoded = verify(token, process.env.JWT_SECRET!) as {
-        exp: number
-      }
-
-      const now = Math.floor(Date.now() / 1000)
-      return decoded.exp - now
-    } catch {
-      return 0
-    }
-  },
-
-  // Refresco de token
-  async refreshToken(oldToken: string) {
-    const user = await this.validateToken(oldToken)
-
+  private generateToken(userId: string, role: string): string {
     return sign(
-      { userId: user.id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: '24h' }
+      { userId, role },
+      this.JWT_SECRET,
+      { expiresIn: this.JWT_EXPIRES_IN }
     )
-  },
+  }
 
-  // Logout
-  async logout(token: string) {
-    // En una implementación más compleja, aquí se podría:
-    // 1. Agregar el token a una lista negra
-    // 2. Invalidar sesiones del usuario
-    // 3. Limpiar caché relacionada
-    return true
-  },
+  private async setAuthCookie(token: string) {
+    const cookieStore = cookies()
+    cookieStore.set('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 // 24 horas
+    })
+  }
 
-  // Registro de intentos de login
-  async recordLoginAttempt(attempt: LoginAttempt) {
-    await db.loginAttempt.create({
-      data: {
-        ip: attempt.ip,
-        email: attempt.email,
-        success: attempt.success,
-        timestamp: new Date(),
-        userAgent: attempt.userAgent
-      }
+  private async getAuthToken(): Promise<string | undefined> {
+    const cookieStore = cookies()
+    return cookieStore.get('auth_token')?.value
+  }
+
+  async recordLoginAttempt(attempt: {
+    ip: string
+    email?: string
+    success: boolean
+    userId?: string
+    userAgent?: string
+  }) {
+    await db.insert(loginAttempts).values({
+      ...attempt,
+      success: attempt.success.toString()
     })
 
     // Si hay demasiados intentos fallidos, bloquear la cuenta
     if (!attempt.success && attempt.userId) {
-      const recentAttempts = await db.loginAttempt.count({
-        where: {
-          userId: attempt.userId,
-          success: false,
-          timestamp: {
-            gte: new Date(Date.now() - 15 * 60 * 1000) // últimos 15 minutos
-          }
-        }
-      })
+      const recentAttempts = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(loginAttempts)
+        .where(eq(loginAttempts.userId, attempt.userId))
 
-      if (recentAttempts >= 5) {
-        await db.user.update({
-          where: { id: attempt.userId },
-          data: { status: 'BLOQUEADO' }
-        })
+      if (recentAttempts[0].count >= 5) {
+        await db.update(users)
+          .set({ status: 'BLOQUEADO' })
+          .where(eq(users.id, attempt.userId))
       }
     }
   }
-} 
+}

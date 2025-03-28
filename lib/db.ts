@@ -1,6 +1,9 @@
 import { neon } from "@neondatabase/serverless"
 import { drizzle } from "drizzle-orm/neon-http"
 import { PrismaClient } from '@prisma/client'
+import * as schema from './schema'
+import { Pool } from 'pg'
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres'
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient }
 
@@ -15,15 +18,25 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 export default prisma
 
 // Crear una conexión SQL con Neon
-export const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!)
 
 // Crear una instancia de Drizzle para operaciones más estructuradas
-export const db = drizzle(sql)
+export const db = drizzle(sql, { schema })
+
+// Crear una configuración alternativa para la base de datos usando pg
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+})
+
+export const dbPg = drizzlePg(pool, { schema })
 
 // Función de utilidad para ejecutar consultas SQL directas
 export async function executeQuery(query: string, params: any[] = []) {
   try {
-    return await sql(query, params)
+    return await sql`${query}`
   } catch (error) {
     console.error("Error executing query:", error)
     throw error
@@ -34,55 +47,47 @@ export async function executeQuery(query: string, params: any[] = []) {
 
 // Noticias
 export async function getNews(limit = 3) {
-  return await sql`
-    SELECT id, title, excerpt, image_url, published_at 
-    FROM news 
-    ORDER BY published_at DESC 
-    LIMIT ${limit}
-  `
+  return await db.query.news.findMany({
+    orderBy: (news, { desc }) => [desc(news.publishedAt)],
+    limit
+  })
 }
 
-export async function getNewsById(id: number) {
-  const results = await sql`
-    SELECT * FROM news WHERE id = ${id}
-  `
-  return results[0] || null
+export async function getNewsById(id: string) {
+  return await db.query.news.findFirst({
+    where: (news, { eq }) => eq(news.id, id)
+  })
 }
 
 // Eventos
 export async function getEvents(limit = 3) {
-  return await sql`
-    SELECT id, title, description, location, start_date, end_date, image_url 
-    FROM events 
-    WHERE start_date >= NOW() 
-    ORDER BY start_date ASC 
-    LIMIT ${limit}
-  `
+  return await db.query.events.findMany({
+    where: (events, { gte }) => gte(events.startDate, new Date()),
+    orderBy: (events, { asc }) => [asc(events.startDate)],
+    limit
+  })
 }
 
-export async function getEventById(id: number) {
-  const results = await sql`
-    SELECT * FROM events WHERE id = ${id}
-  `
-  return results[0] || null
+export async function getEventById(id: string) {
+  return await db.query.events.findFirst({
+    where: (events, { eq }) => eq(events.id, id)
+  })
 }
 
 // Documentos
 export async function getDocuments(type?: string, limit = 10) {
   if (type) {
-    return await sql`
-      SELECT * FROM documents 
-      WHERE document_type = ${type} 
-      ORDER BY publication_date DESC 
-      LIMIT ${limit}
-    `
+    return await db.query.documents.findMany({
+      where: (documents, { eq }) => eq(documents.type, type),
+      orderBy: (documents, { desc }) => [desc(documents.publishedAt)],
+      limit
+    })
   }
 
-  return await sql`
-    SELECT * FROM documents 
-    ORDER BY publication_date DESC 
-    LIMIT ${limit}
-  `
+  return await db.query.documents.findMany({
+    orderBy: (documents, { desc }) => [desc(documents.publishedAt)],
+    limit
+  })
 }
 
 // Contacto
@@ -93,16 +98,18 @@ export async function saveContactMessage(message: {
   subject: string
   message: string
 }) {
-  return await sql`
-    INSERT INTO contact_messages (name, email, phone, subject, message)
-    VALUES (${message.name}, ${message.email}, ${message.phone || null}, ${message.subject}, ${message.message})
-    RETURNING id
-  `
+  return await db.insert(schema.contactMessages).values({
+    name: message.name,
+    email: message.email,
+    phone: message.phone,
+    subject: message.subject,
+    message: message.message
+  }).returning()
 }
 
 // Reclamos
 export async function saveComplaint(complaint: {
-  user_id?: number
+  userId?: string
   category: string
   subject: string
   description: string
@@ -110,20 +117,36 @@ export async function saveComplaint(complaint: {
   latitude?: number
   longitude?: number
 }) {
-  return await sql`
-    INSERT INTO complaints (
-      user_id, category, subject, description, location, latitude, longitude
-    )
-    VALUES (
-      ${complaint.user_id || null}, 
-      ${complaint.category}, 
-      ${complaint.subject}, 
-      ${complaint.description}, 
-      ${complaint.location || null}, 
-      ${complaint.latitude || null}, 
-      ${complaint.longitude || null}
-    )
-    RETURNING id
-  `
+  return await db.insert(schema.complaints).values({
+    userId: complaint.userId,
+    category: complaint.category,
+    subject: complaint.subject,
+    description: complaint.description,
+    location: complaint.location,
+    latitude: complaint.latitude,
+    longitude: complaint.longitude
+  }).returning()
+}
+
+// Definir los tipos de las tablas
+export interface User {
+  id: string
+  email: string
+  password: string
+  name: string
+  role: string
+  status: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface LoginAttempt {
+  id: string
+  ip: string
+  email?: string
+  success: boolean
+  userId?: string
+  userAgent?: string
+  timestamp: Date
 }
 
