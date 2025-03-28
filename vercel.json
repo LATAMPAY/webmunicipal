@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["sfo1"],
+  "env": {
+    "DATABASE_URL": "postgres://neondb_owner:npg_ofNzJyaw26dC@ep-gentle-dew-acqy9nc6-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require",
+    "JWT_SECRET_KEY": "napi_7oanpaxxjz9ii6776fr2fcn9v26e1yli42j02ltsn85jk4hnbpv2yeeabulii7it",
+    "NODE_ENV": "production",
+    "POSTGRES_URL": "postgres://neondb_owner:npg_ofNzJyaw26dC@ep-gentle-dew-acqy9nc6-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require",
+    "POSTGRES_PRISMA_URL": "postgres://neondb_owner:npg_ofNzJyaw26dC@ep-gentle-dew-acqy9nc6-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require",
+    "POSTGRES_URL_NON_POOLING": "postgres://neondb_owner:npg_ofNzJyaw26dC@ep-gentle-dew-acqy9nc6.sa-east-1.aws.neon.tech/neondb?sslmode=require"
+  }
+} 

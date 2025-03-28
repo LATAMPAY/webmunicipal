@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="400" viewBox="0 0 800 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="400" fill="#E2E8F0"/>
+  <path d="M400 200C400 200 450 150 500 150C550 150 600 200 600 250C600 300 550 350 500 350C450 350 400 300 400 250C400 200 400 200 400 200Z" fill="#94A3B8"/>
+  <text x="400" y="180" text-anchor="middle" fill="#1E293B" font-family="Arial" font-size="24">Plaza Saludable</text>
+</svg> 

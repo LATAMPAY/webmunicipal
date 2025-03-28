@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" viewBox="0 0 800 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="600" fill="#E2E8F0"/>
+  <path d="M400 300C400 300 450 250 500 250C550 250 600 300 600 350C600 400 550 450 500 450C450 450 400 400 400 350C400 300 400 300 400 300Z" fill="#94A3B8"/>
+  <circle cx="400" cy="300" r="10" fill="#EF4444"/>
+  <text x="400" y="280" text-anchor="middle" fill="#1E293B" font-family="Arial" font-size="24">Municipalidad</text>
+</svg> 
