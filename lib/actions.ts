@@ -6,6 +6,7 @@ import bcryptjs from "bcryptjs"
 import { SignJWT, jwtVerify } from "jose"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
+import { saveContactMessage } from "@/lib/db"
 
 // Función para generar un JWT_SECRET aleatorio si no existe
 let jwtSecret: string
@@ -265,29 +266,38 @@ export async function getDocuments(type?: string, limit = 10) {
 
 // Contacto
 export async function submitContactForm(formData: FormData) {
-  const name = formData.get("name") as string
-  const email = formData.get("email") as string
-  const phone = (formData.get("phone") as string) || null
-  const subject = formData.get("subject") as string
-  const message = formData.get("message") as string
-
-  // Validar los datos
-  if (!name || !email || !subject || !message) {
-    return { success: false, message: "Todos los campos son obligatorios" }
-  }
-
   try {
-    // Guardar el mensaje
-    const result = await sql`
-      INSERT INTO contact_messages (name, email, phone, subject, message)
-      VALUES (${name}, ${email}, ${phone}, ${subject}, ${message})
-      RETURNING id
-    `
+    const name = formData.get("name") as string
+    const email = formData.get("email") as string
+    const phone = formData.get("phone") as string
+    const subject = formData.get("subject") as string
+    const message = formData.get("message") as string
 
-    return { success: true, message: "Mensaje enviado correctamente", id: result[0].id }
-  } catch (error: any) {
-    console.error("Error saving contact message:", error)
-    return { success: false, message: error.message || "Error al enviar el mensaje" }
+    if (!name || !email || !subject || !message) {
+      return {
+        success: false,
+        message: "Por favor complete todos los campos requeridos",
+      }
+    }
+
+    await saveContactMessage({
+      name,
+      email,
+      phone,
+      subject,
+      message,
+    })
+
+    return {
+      success: true,
+      message: "Mensaje enviado correctamente",
+    }
+  } catch (error) {
+    console.error("Error al enviar mensaje:", error)
+    return {
+      success: false,
+      message: "Error al enviar el mensaje. Por favor intente nuevamente.",
+    }
   }
 }
 
