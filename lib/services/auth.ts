@@ -10,6 +10,8 @@ export interface LoginAttempt {
   timestamp: Date
   success: boolean
   userId?: string
+  email?: string
+  userAgent?: string
 }
 
 interface RegisterParams {
@@ -312,12 +314,14 @@ export const authService = {
   },
 
   // Registro de intentos de login
-  private async recordLoginAttempt(attempt: LoginAttempt) {
+  async recordLoginAttempt(attempt: LoginAttempt) {
     await db.loginAttempt.create({
       data: {
         ip: attempt.ip,
+        email: attempt.email,
         success: attempt.success,
-        userId: attempt.userId
+        timestamp: new Date(),
+        userAgent: attempt.userAgent
       }
     })
 
