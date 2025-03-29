@@ -2,18 +2,17 @@ import { NextResponse } from 'next/server'
 import { authService } from '@/lib/services/auth'
 import { rateLimit } from '@/lib/utils/rate-limit'
 import { sendEmail } from '@/lib/utils/email'
+import { AppError, createErrorResponse } from '@/lib/utils/error'
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const { email, password } = body
+    const formData = await req.formData()
+    const email = formData.get('email') as string
+    const password = formData.get('password') as string
 
     // Validar campos requeridos
     if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email y contraseña son requeridos' },
-        { status: 400 }
-      )
+      throw new AppError('Email y contraseña son requeridos', 'MISSING_CREDENTIALS', 400)
     }
 
     // Verificar rate limit
@@ -24,14 +23,13 @@ export async function POST(req: Request) {
     )
 
     if (isBlocked) {
-      return NextResponse.json(
-        { error: 'Demasiados intentos. Por favor espera 5 minutos.' },
-        { status: 429 }
-      )
+      throw new AppError('Demasiados intentos. Por favor espera 5 minutos.', 'RATE_LIMIT_EXCEEDED', 429)
     }
 
     // Intentar login
-    const result = await authService.login({ email, password })
+    const ip = req.headers.get('x-forwarded-for') || '0.0.0.0'
+    const userAgent = req.headers.get('user-agent') || 'unknown'
+    const result = await authService.login(email, password, ip, userAgent)
 
     if (result.requiresTwoFactor) {
       // Enviar código 2FA por email
@@ -54,36 +52,16 @@ export async function POST(req: Request) {
 
     // Login exitoso
     return NextResponse.json({
-      message: 'Login exitoso',
+      success: true,
       user: {
         id: result.user.id,
         email: result.user.email,
         nombre: result.user.nombre
-      },
-      token: result.token
+      }
     })
 
-  } catch (error: any) {
-    console.error('Error en login:', error)
-
-    if (error.message === 'INVALID_CREDENTIALS') {
-      return NextResponse.json(
-        { error: 'Email o contraseña incorrectos' },
-        { status: 401 }
-      )
-    }
-
-    if (error.message === 'EMAIL_NOT_VERIFIED') {
-      return NextResponse.json(
-        { error: 'Por favor verifica tu email antes de iniciar sesión' },
-        { status: 403 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Error al iniciar sesión' },
-      { status: 500 }
-    )
+  } catch (error) {
+    return createErrorResponse(error)
   }
 }
 

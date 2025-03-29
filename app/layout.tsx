@@ -1,6 +1,3 @@
-"use client"
-
-import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { MainNav } from "@/components/main-nav"
@@ -10,9 +7,9 @@ import { Providers } from "@/components/providers"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
-  title: "Municipalidad de General Mosconi",
-  description: "Portal oficial de la Municipalidad de General Mosconi",
+export const metadata = {
+  title: 'Municipalidad de General Mosconi',
+  description: 'Portal oficial de la Municipalidad de General Mosconi'
 }
 
 export default function RootLayout({
@@ -27,7 +24,7 @@ export default function RootLayout({
           <div className="flex min-h-screen flex-col">
             <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
               <div className="container flex h-16 items-center justify-between">
-            <MainNav />
+                <MainNav />
                 <div className="flex items-center gap-4">
                   <UserNav />
                   <MobileNav />
@@ -88,5 +85,3 @@ export default function RootLayout({
     </html>
   )
 }
-
-import './globals.css'

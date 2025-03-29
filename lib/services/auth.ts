@@ -5,6 +5,7 @@ import { sign, verify } from 'jsonwebtoken'
 import { cookies } from 'next/headers'
 import { NextRequest } from 'next/server'
 import { eq, sql } from 'drizzle-orm'
+import { AppError } from '@/lib/utils/error'
 
 interface TokenPayload {
   userId: string
@@ -20,6 +21,9 @@ export class AuthService {
   constructor() {}
 
   async login(email: string, password: string, ip: string, userAgent: string) {
+    if (!email || !password) {
+      throw new AppError('Email y contraseña son requeridos', 'VALIDATION_ERROR', 400)
+    }
     try {
       const user = await db.query.users.findFirst({
         where: eq(users.email, email),
@@ -39,7 +43,7 @@ export class AuthService {
           success: false,
           userAgent
         })
-        throw new Error('Credenciales inválidas')
+        throw new AppError('Credenciales inválidas', 'INVALID_CREDENTIALS', 401)
       }
 
       if (user.status !== 'active') {
@@ -50,7 +54,7 @@ export class AuthService {
           userId: user.id,
           userAgent
         })
-        throw new Error('Cuenta inactiva')
+        throw new AppError('Cuenta inactiva', 'INACTIVE_ACCOUNT', 403)
       }
 
       const isValidPassword = await compare(password, user.password)
@@ -62,7 +66,7 @@ export class AuthService {
           userId: user.id,
           userAgent
         })
-        throw new Error('Credenciales inválidas')
+        throw new AppError('Credenciales inválidas', 'INVALID_CREDENTIALS', 401)
       }
 
       const token = this.generateToken(user.id, user.role)
@@ -104,33 +108,46 @@ export class AuthService {
   async register(userData: {
     email: string
     password: string
-    name: string
-    role: string
+    nombre: string
+    apellido: string
   }) {
+    if (!userData.email || !userData.password || !userData.nombre || !userData.apellido) {
+      throw new AppError('Todos los campos son requeridos', 'VALIDATION_ERROR', 400)
+    }
+
+    if (userData.password.length < 8) {
+      throw new AppError('La contraseña debe tener al menos 8 caracteres', 'VALIDATION_ERROR', 400)
+    }
     try {
       const existingUser = await db.query.users.findFirst({
         where: eq(users.email, userData.email)
       })
 
       if (existingUser) {
-        throw new Error('El email ya está registrado')
+        throw new AppError('El email ya está registrado', 'EMAIL_EXISTS', 400)
       }
 
       const hashedPassword = await hash(userData.password, 10)
+      const verificationToken = sign(
+        { email: userData.email },
+        this.JWT_SECRET,
+        { expiresIn: '24h' }
+      )
+
       const user = await db.insert(users).values({
         ...userData,
         password: hashedPassword,
-        status: 'active'
+        status: 'pending'
       }).returning()
 
       return {
-        success: true,
         user: {
           id: user[0].id,
           email: user[0].email,
-          name: user[0].name,
-          role: user[0].role
-        }
+          nombre: user[0].nombre,
+          apellido: user[0].apellido
+        },
+        verificationToken
       }
     } catch (error) {
       console.error('Error en registro:', error)
@@ -139,10 +156,13 @@ export class AuthService {
   }
 
   async verifyToken(token: string): Promise<TokenPayload> {
+    if (!token) {
+      throw new AppError('Token es requerido', 'VALIDATION_ERROR', 400)
+    }
     try {
       return verify(token, this.JWT_SECRET) as TokenPayload
     } catch (error) {
-      throw new Error('Token inválido')
+      throw new AppError('Token inválido', 'INVALID_TOKEN', 401)
     }
   }
 
@@ -150,7 +170,7 @@ export class AuthService {
     try {
       const token = await this.getAuthToken()
       if (!token) {
-        throw new Error('No autenticado')
+        throw new AppError('No autenticado', 'UNAUTHORIZED', 401)
       }
 
       const payload = await this.verifyToken(token)
@@ -159,14 +179,14 @@ export class AuthService {
         columns: {
           id: true,
           email: true,
-          name: true,
-          role: true,
+          nombre: true,
+          apellido: true,
           status: true
         }
       })
 
       if (!user) {
-        throw new Error('Usuario no encontrado')
+        throw new AppError('Usuario no encontrado', 'USER_NOT_FOUND', 404)
       }
 
       return user

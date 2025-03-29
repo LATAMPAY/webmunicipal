@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
-import { authService } from '@/lib/services/auth'
+import { AuthService } from '@/lib/services/auth'
 import { sendEmail } from '@/lib/utils/email'
+import { AppError, createErrorResponse } from '@/lib/utils/error'
+
+const authService = new AuthService()
 
 export async function POST(req: Request) {
   try {
@@ -9,10 +12,7 @@ export async function POST(req: Request) {
 
     // Validar campos requeridos
     if (!email || !password || !nombre || !apellido) {
-      return NextResponse.json(
-        { error: 'Todos los campos son requeridos' },
-        { status: 400 }
-      )
+      throw new AppError('Todos los campos son requeridos', 'MISSING_FIELDS', 400)
     }
 
     // Registrar usuario
@@ -41,20 +41,11 @@ export async function POST(req: Request) {
       userId: user.id
     })
 
-  } catch (error: any) {
-    console.error('Error en registro:', error)
-    
-    if (error.code === 'P2002') {
-      return NextResponse.json(
-        { error: 'El email ya está registrado' },
-        { status: 400 }
-      )
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'P2002') {
+      throw new AppError('El email ya está registrado', 'EMAIL_EXISTS', 400)
     }
-
-    return NextResponse.json(
-      { error: 'Error al registrar usuario' },
-      { status: 500 }
-    )
+    return createErrorResponse(error)
   }
 }
 

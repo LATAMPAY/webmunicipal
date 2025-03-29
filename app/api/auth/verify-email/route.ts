@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { authService } from '@/lib/services/auth'
+import { AppError, createErrorResponse } from '@/lib/utils/error'
 
 export async function POST(req: Request) {
   try {
@@ -8,10 +9,7 @@ export async function POST(req: Request) {
 
     // Validar token
     if (!token) {
-      return NextResponse.json(
-        { error: 'Token de verificación requerido' },
-        { status: 400 }
-      )
+      throw new AppError('Token de verificación requerido', 'MISSING_TOKEN', 400)
     }
 
     // Verificar email
@@ -26,26 +24,15 @@ export async function POST(req: Request) {
       }
     })
 
-  } catch (error: any) {
-    console.error('Error en verificación de email:', error)
-
-    if (error.message === 'INVALID_TOKEN') {
-      return NextResponse.json(
-        { error: 'Token inválido o expirado' },
-        { status: 401 }
-      )
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'INVALID_TOKEN') {
+        throw new AppError('Token inválido o expirado', 'INVALID_TOKEN', 401)
+      }
+      if (error.message === 'EMAIL_ALREADY_VERIFIED') {
+        throw new AppError('El email ya ha sido verificado', 'EMAIL_ALREADY_VERIFIED', 400)
+      }
     }
-
-    if (error.message === 'EMAIL_ALREADY_VERIFIED') {
-      return NextResponse.json(
-        { error: 'El email ya ha sido verificado' },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Error al verificar email' },
-      { status: 500 }
-    )
+    return createErrorResponse(error)
   }
-} 
+}
